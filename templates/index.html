@@ -27,14 +27,15 @@
 
       <div class="grid">
         <label>
-          <span>Company name <em>(optional, guesses a domain)</em></span>
+          <span>Company name <em>(optional — checks common domains via DNS)</em></span>
           <input type="text" id="company" name="company" placeholder="Acme Inc" autocomplete="off">
         </label>
         <label>
-          <span>Domain <em>(preferred — overrides guess)</em></span>
+          <span>Domain <em>(one or more, comma-separated — overrides discovery)</em></span>
           <input type="text" id="domain" name="domain" placeholder="acme.com" required autocomplete="off">
         </label>
       </div>
+      <p id="discovery-note" class="discovery-note hidden"></p>
 
       <details class="options">
         <summary>Advanced options</summary>

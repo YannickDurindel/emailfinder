@@ -108,6 +108,14 @@ label.checkbox {
 }
 label.checkbox input { width: 16px; height: 16px; }
 
+.discovery-note {
+  margin: -8px 0 16px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.discovery-note.found { color: var(--valid); }
+.discovery-note.unconfirmed { color: var(--unknown); }
+
 input[type="text"], input[type="number"] {
   background: var(--bg);
   border: 1px solid var(--border);

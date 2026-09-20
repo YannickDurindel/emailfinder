@@ -33,6 +33,20 @@ _ALT_DOMAIN_PATTERNS = ("first.last", "flast")
 
 DEFAULT_ALT_TLDS: tuple[str, ...] = ("fr", "co", "us")
 
+# TLDs tried when discovering a company's real domain from just its name.
+DEFAULT_DISCOVERY_TLDS: tuple[str, ...] = ("com", "net", "org", "io", "co", "fr", "de", "us", "biz", "info")
+
+_COMPANY_SUFFIXES = ("inc", "llc", "ltd", "corp", "co", "sa", "gmbh", "srl", "bv")
+
+
+def _slugify_company(company: str) -> str:
+    slug = re.sub(r"[^a-z0-9]", "", company.strip().lower())
+    for suf in _COMPANY_SUFFIXES:
+        if slug.endswith(suf) and len(slug) > len(suf):
+            slug = slug[: -len(suf)]
+            break
+    return slug
+
 
 def generate_candidates(first_name: str, last_name: str, domain: str) -> list[Candidate]:
     """Return likely email candidates, ordered from most to least common pattern.
@@ -162,15 +176,60 @@ def generate_full_candidates(
     return deduped
 
 
-def guess_domain_from_company(company: str, tld: str = "com") -> str:
-    """Best-effort slug of a company name into a domain. Not reliable — the
-    caller should confirm the real domain (e.g. from the company's website)
-    whenever possible instead of relying on this guess.
+def generate_candidates_for_domains(
+    first_name: str,
+    last_name: str,
+    domains: list[str],
+    include_roles: bool = True,
+) -> list[Candidate]:
+    """Full name-pattern + role candidates for each of several *confirmed*
+    domains (see verify.discover_domains) -- no reduced pattern set and no
+    further alt-TLD guessing, since these domains are already known to
+    exist rather than being unconfirmed long shots.
     """
-    slug = re.sub(r"[^a-z0-9]", "", company.strip().lower())
-    suffixes = ("inc", "llc", "ltd", "corp", "co", "sa", "gmbh", "srl", "bv")
-    for suf in suffixes:
-        if slug.endswith(suf) and len(slug) > len(suf):
-            slug = slug[: -len(suf)]
-            break
-    return f"{slug}.{tld}"
+    out: list[Candidate] = []
+    for domain in domains:
+        out.extend(generate_candidates(first_name, last_name, domain))
+        if include_roles:
+            out.extend(generate_role_candidates(domain))
+
+    seen: set[str] = set()
+    deduped: list[Candidate] = []
+    for c in out:
+        if c.email in seen:
+            continue
+        seen.add(c.email)
+        deduped.append(c)
+    return deduped
+
+
+def guess_domain_from_company(company: str, tld: str = "com") -> str:
+    """Best-effort slug of a company name into a single domain guess. Not
+    reliable on its own -- prefer generate_domain_guesses() + a DNS check
+    (see verify.discover_domains) to confirm a domain actually exists
+    before relying on it.
+    """
+    return f"{_slugify_company(company)}.{tld}"
+
+
+def generate_domain_guesses(company: str, tlds: tuple[str, ...] = DEFAULT_DISCOVERY_TLDS) -> list[str]:
+    """All candidate domains for a company name across several common TLDs,
+    e.g. "Acme Inc" -> ["acme.com", "acme.net", "acme.org", ...]. These are
+    unconfirmed guesses -- see verify.discover_domains to check which ones
+    actually exist before using them.
+    """
+    slug = _slugify_company(company)
+    if not slug:
+        return []
+    seen: set[str] = set()
+    out: list[str] = []
+    for tld in tlds:
+        tld = tld.strip().lstrip(".").lower()
+        if not tld:
+            continue
+        domain = f"{slug}.{tld}"
+        if domain in seen:
+            continue
+        seen.add(domain)
+        out.append(domain)
+    return out

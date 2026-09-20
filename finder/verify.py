@@ -108,6 +108,51 @@ def _resolve_mx(domain: str) -> list[str]:
         return []
 
 
+@dataclass
+class DomainCandidate:
+    domain: str
+    has_mx: bool  # False means it resolves (A record) but has no MX -- likely no mail service
+
+
+def _check_domain_exists(domain: str) -> str | None:
+    """'mx' if the domain has MX records, 'a' if it resolves but has no MX
+    (likely no mail service), or None if it doesn't resolve at all.
+    """
+    try:
+        dns.resolver.resolve(domain, "MX")
+        return "mx"
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        pass
+    except Exception:
+        return None
+    try:
+        dns.resolver.resolve(domain, "A")
+        return "a"
+    except Exception:
+        return None
+
+
+def discover_domains(candidates: list[str], max_concurrent: int = 8) -> list[DomainCandidate]:
+    """Check which candidate domains actually exist, via DNS only -- no SMTP
+    contact at all, so this is fast and doesn't touch any mail server.
+    Returns just the ones that resolve, MX-configured domains first (a
+    domain with no MX likely doesn't receive mail even if it resolves for a
+    website), otherwise preserving the input order.
+    """
+    if not candidates:
+        return []
+    with ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        kinds = list(executor.map(_check_domain_exists, candidates))
+
+    found = [
+        DomainCandidate(domain=domain, has_mx=(kind == "mx"))
+        for domain, kind in zip(candidates, kinds)
+        if kind is not None
+    ]
+    found.sort(key=lambda d: not d.has_mx)  # stable sort: MX domains first, input order preserved within each group
+    return found
+
+
 def _random_local_part(length: int = 20) -> str:
     return "".join(random.choices(string.ascii_lowercase + string.digits, k=length))
 

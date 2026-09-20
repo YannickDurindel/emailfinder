@@ -21,7 +21,14 @@ import os
 
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 
-from finder.patterns import DEFAULT_ALT_TLDS, generate_full_candidates, guess_domain_from_company
+from finder.patterns import (
+    DEFAULT_ALT_TLDS,
+    DEFAULT_DISCOVERY_TLDS,
+    generate_candidates_for_domains,
+    generate_domain_guesses,
+    generate_full_candidates,
+    guess_domain_from_company,
+)
 
 app = Flask(__name__)
 
@@ -40,6 +47,30 @@ def api_guess_domain():
     return jsonify({"domain": guess_domain_from_company(company, tld=tld)})
 
 
+@app.get("/api/discover-domains")
+def api_discover_domains():
+    """DNS-only check (no SMTP contact) of which common-TLD variants of a
+    company name actually exist, so the caller can run the expensive SMTP
+    verification only against domains confirmed to be real.
+    """
+    company = request.args.get("company", "").strip()
+    tlds_raw = request.args.get("tlds", ",".join(DEFAULT_DISCOVERY_TLDS))
+    tlds = tuple(t.strip() for t in tlds_raw.split(",") if t.strip())
+    if not company:
+        return jsonify({"domains": [], "checked": []})
+
+    from finder.verify import discover_domains  # lazy import: dnspython not needed elsewhere
+
+    candidates = generate_domain_guesses(company, tlds=tlds)
+    found = discover_domains(candidates)
+    return jsonify(
+        {
+            "domains": [{"domain": d.domain, "has_mx": d.has_mx} for d in found],
+            "checked": candidates,
+        }
+    )
+
+
 def _sse(event: str, data: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(data)}\n\n"
 
@@ -49,11 +80,13 @@ def api_search():
     first = request.args.get("first", "").strip()
     last = request.args.get("last", "").strip()
     domain = request.args.get("domain", "").strip().lower()
+    domains_raw = request.args.get("domains", "").strip()
+    domains_list = [d.strip().lower() for d in domains_raw.split(",") if d.strip()]
     do_verify = request.args.get("verify", "1") != "0"
     stop_on_valid = request.args.get("stop_on_valid", "0") == "1"
     delay = max(0.0, min(float(request.args.get("delay", 1.5) or 1.5), 10.0))
     timeout = max(1.0, min(float(request.args.get("timeout", 10) or 10), 30.0))
-    helo_domain = request.args.get("helo_domain", "").strip() or domain
+    helo_domain = request.args.get("helo_domain", "").strip() or domain or (domains_list[0] if domains_list else "example.com")
     include_roles = request.args.get("include_roles", "1") != "0"
     include_alt_tlds = request.args.get("include_alt_tlds", "1") != "0"
     alt_tlds_raw = request.args.get("alt_tlds", ",".join(DEFAULT_ALT_TLDS))
@@ -61,14 +94,20 @@ def api_search():
     max_concurrent_domains = max(1, min(int(request.args.get("max_concurrent_domains", 4) or 4), 8))
 
     try:
-        candidates = generate_full_candidates(
-            first,
-            last,
-            domain,
-            include_roles=include_roles,
-            include_alt_domains=include_alt_tlds,
-            alt_tlds=alt_tlds,
-        )
+        if domains_list:
+            # One or more domains already confirmed to exist (see
+            # /api/discover-domains) -- run the full pattern set against each,
+            # no further alt-TLD long-shot guessing needed.
+            candidates = generate_candidates_for_domains(first, last, domains_list, include_roles=include_roles)
+        else:
+            candidates = generate_full_candidates(
+                first,
+                last,
+                domain,
+                include_roles=include_roles,
+                include_alt_domains=include_alt_tlds,
+                alt_tlds=alt_tlds,
+            )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 

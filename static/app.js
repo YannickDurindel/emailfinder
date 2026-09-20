@@ -14,6 +14,7 @@
 
   const companyInput = document.getElementById("company");
   const domainInput = document.getElementById("domain");
+  const discoveryNote = document.getElementById("discovery-note");
 
   let currentSource = null;
   let rows = {}; // email -> {email, pattern, status, detail, smtp_code}
@@ -30,26 +31,60 @@
     skipped: "skipped",
   };
 
-  // Best-effort auto-fill of domain from company name, without clobbering
-  // a domain the user already typed themselves.
+  // Auto-fill the domain field from the company name, without clobbering a
+  // domain the user already typed themselves. Instead of guessing a single
+  // ".com" and hoping, this checks several common TLDs via DNS (no SMTP
+  // contact) and only fills in domains confirmed to actually exist.
   let domainTouchedByUser = false;
   domainInput.addEventListener("input", () => { domainTouchedByUser = true; });
 
-  let guessTimer = null;
+  function setDiscoveryNote(text, cls) {
+    discoveryNote.textContent = text;
+    discoveryNote.classList.remove("hidden", "found", "unconfirmed");
+    if (text) {
+      discoveryNote.classList.add(cls);
+    } else {
+      discoveryNote.classList.add("hidden");
+    }
+  }
+
+  let discoveryTimer = null;
   companyInput.addEventListener("input", () => {
-    clearTimeout(guessTimer);
+    clearTimeout(discoveryTimer);
     if (domainTouchedByUser && domainInput.value.trim()) return;
     const company = companyInput.value.trim();
-    if (!company) return;
-    guessTimer = setTimeout(async () => {
+    if (!company) {
+      setDiscoveryNote("", "found");
+      return;
+    }
+    setDiscoveryNote("Checking common domains for this company…", "unconfirmed");
+    discoveryTimer = setTimeout(async () => {
+      if (domainTouchedByUser) return;
       try {
-        const res = await fetch(`/api/guess-domain?company=${encodeURIComponent(company)}`);
+        const res = await fetch(`/api/discover-domains?company=${encodeURIComponent(company)}`);
         const data = await res.json();
-        if (data.domain && !domainTouchedByUser) {
-          domainInput.value = data.domain;
+        if (domainTouchedByUser) return;
+
+        if (data.domains && data.domains.length > 0) {
+          const names = data.domains.map((d) => d.domain);
+          domainInput.value = names.join(", ");
+          const withMx = data.domains.filter((d) => d.has_mx).length;
+          setDiscoveryNote(
+            `✓ Confirmed via DNS: ${names.join(", ")}` + (withMx < names.length ? " (some without mail service configured)" : ""),
+            "found"
+          );
+        } else {
+          // Nothing confirmed real -- fall back to a plain guess, clearly marked as unconfirmed.
+          const guessRes = await fetch(`/api/guess-domain?company=${encodeURIComponent(company)}`);
+          const guessData = await guessRes.json();
+          if (domainTouchedByUser) return;
+          if (guessData.domain) {
+            domainInput.value = guessData.domain;
+            setDiscoveryNote(`⚠ No real domain found among common TLDs — guessed "${guessData.domain}" (unconfirmed, please check).`, "unconfirmed");
+          }
         }
       } catch (e) { /* ignore, non-critical */ }
-    }, 400);
+    }, 500);
   });
 
   const GROUP_LABELS = {
@@ -59,8 +94,11 @@
   };
 
   function groupKey(row) {
+    // Always key on tier + domain (not just tier) -- with several confirmed
+    // domains, "personal"/"role" candidates can span multiple domains and
+    // still need separate group headers per domain.
     const domain = row.email.split("@")[1] || "";
-    return row.tier === "alt-domain" ? `alt:${domain}` : (row.tier || "personal");
+    return `${row.tier || "personal"}:${domain}`;
   }
 
   function groupLabel(row) {
@@ -147,10 +185,11 @@
       currentSource = null;
     }
 
+    const domainEntries = domainInput.value.split(",").map((d) => d.trim()).filter(Boolean);
+
     const params = new URLSearchParams({
       first: document.getElementById("first").value.trim(),
       last: document.getElementById("last").value.trim(),
-      domain: domainInput.value.trim(),
       verify: document.getElementById("verify").checked ? "1" : "0",
       stop_on_valid: document.getElementById("stop_on_valid").checked ? "1" : "0",
       delay: document.getElementById("delay").value || "1.5",
@@ -161,6 +200,14 @@
       alt_tlds: document.getElementById("alt_tlds").value.trim() || "fr,co,us",
       max_concurrent_domains: document.getElementById("max_concurrent_domains").value || "4",
     });
+
+    if (domainEntries.length > 1) {
+      // Multiple (presumably already-confirmed) domains: full pattern set
+      // against each, no further alt-TLD guessing.
+      params.set("domains", domainEntries.join(","));
+    } else {
+      params.set("domain", domainEntries[0] || "");
+    }
 
     rows = {};
     rowOrder = [];

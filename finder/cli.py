@@ -5,7 +5,14 @@ import csv
 import json
 import sys
 
-from .patterns import DEFAULT_ALT_TLDS, generate_full_candidates, guess_domain_from_company
+from .patterns import (
+    DEFAULT_ALT_TLDS,
+    DEFAULT_DISCOVERY_TLDS,
+    generate_candidates_for_domains,
+    generate_domain_guesses,
+    generate_full_candidates,
+    guess_domain_from_company,
+)
 
 STATUS_VALID = "valid"
 STATUS_INVALID = "invalid"
@@ -33,7 +40,17 @@ def build_parser() -> argparse.ArgumentParser:
         "Prefer --domain with the real domain whenever you know it.",
     )
 
-    p.add_argument("--tld", default="com", help="TLD to use when guessing a domain from --company (default: com)")
+    p.add_argument(
+        "--tld",
+        default="com",
+        help="Fallback TLD to guess with if --company is given and no real domain can be found via DNS (default: com)",
+    )
+    p.add_argument(
+        "--discovery-tlds",
+        default=",".join(DEFAULT_DISCOVERY_TLDS),
+        help="With --company: comma-separated TLDs to check via DNS to find the real domain(s) "
+        f"(default: {','.join(DEFAULT_DISCOVERY_TLDS)})",
+    )
     p.add_argument(
         "--no-role-addresses",
         action="store_true",
@@ -76,24 +93,45 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    domains: list[str] = []
+    domain = ""
+
     if args.domain:
         domain = args.domain.strip().lower()
     else:
-        domain = guess_domain_from_company(args.company, tld=args.tld)
-        print(f"[!] No --domain given; guessing '{domain}' from company name '{args.company}'.", file=sys.stderr)
-        print("    This is a naive guess and is frequently wrong. Pass --domain if you know it.", file=sys.stderr)
+        # Instead of guessing a single ".com" and hoping, check several
+        # common TLDs via DNS (no SMTP contact) and only use domains
+        # confirmed to actually exist.
+        from .verify import discover_domains  # lazy: avoids requiring dnspython for --no-verify-only flows
+
+        discovery_tlds = tuple(t.strip() for t in args.discovery_tlds.split(",") if t.strip())
+        candidates_to_check = generate_domain_guesses(args.company, tlds=discovery_tlds)
+        found = discover_domains(candidates_to_check)
+
+        if found:
+            domains = [d.domain for d in found]
+            print(f"[i] Confirmed real domain(s) via DNS: {', '.join(domains)}", file=sys.stderr)
+        else:
+            domain = guess_domain_from_company(args.company, tld=args.tld)
+            print(f"[!] No real domain found among common TLDs for '{args.company}'; guessing '{domain}'.", file=sys.stderr)
+            print("    This is a naive, unconfirmed guess. Pass --domain if you know the real one.", file=sys.stderr)
 
     alt_tlds = tuple(t.strip() for t in args.alt_tlds.split(",") if t.strip())
 
     try:
-        candidates = generate_full_candidates(
-            args.first,
-            args.last,
-            domain,
-            include_roles=not args.no_role_addresses,
-            include_alt_domains=not args.no_alt_tlds,
-            alt_tlds=alt_tlds,
-        )
+        if domains:
+            # One or more domains already confirmed to exist -- full pattern
+            # set against each, no further alt-TLD long-shot guessing needed.
+            candidates = generate_candidates_for_domains(args.first, args.last, domains, include_roles=not args.no_role_addresses)
+        else:
+            candidates = generate_full_candidates(
+                args.first,
+                args.last,
+                domain,
+                include_roles=not args.no_role_addresses,
+                include_alt_domains=not args.no_alt_tlds,
+                alt_tlds=alt_tlds,
+            )
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
@@ -106,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         from .verify import SMTPVerifier  # lazy: avoids requiring dnspython for --no-verify
 
-        helo_domain = args.helo_domain or domain
+        helo_domain = args.helo_domain or domain or (domains[0] if domains else "example.com")
         verifier = SMTPVerifier(
             helo_domain=helo_domain,
             mail_from=args.mail_from,

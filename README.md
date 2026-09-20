@@ -35,6 +35,18 @@ Fill in the name + domain, hit **Find emails**, and results stream in live as
 each candidate is checked, with color-coded status badges and CSV/JSON
 export. This is the same `finder` engine as the CLI underneath.
 
+### Domain discovery
+
+Typing a company name (and leaving Domain blank) doesn't just guess
+`<name>.com` — it checks several common TLDs (`.com`, `.net`, `.org`,
+`.io`, `.co`, `.fr`, `.de`, `.us`, `.biz`, `.info`) via **DNS only, no SMTP
+contact**, and only fills in the domains actually confirmed to exist. If
+more than one is real (e.g. a company with both `.com` and `.fr`), all of
+them get the *full* name-pattern + generic-address treatment — not the
+reduced long-shot set alt-TLD guessing uses — since they're confirmed real
+rather than guessed. The Domain field accepts a comma-separated list if
+you want to enter more than one yourself.
+
 By default this binds to `127.0.0.1` only (not reachable from other
 devices) and has **no authentication** — anything that can reach the port
 can trigger a search, and the live SMTP probes that come with it. Fine for
