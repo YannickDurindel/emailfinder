@@ -5,7 +5,18 @@ domain, then (optionally) tests each candidate with a raw SMTP handshake
 (`EHLO` → `MAIL FROM` → `RCPT TO` → `RSET`/`QUIT`) to see whether the mail
 server accepts it — **no email is ever sent**, since `DATA` is never issued.
 
-## Install
+## Quick start
+
+```bash
+git clone https://github.com/YannickDurindel/emailfinder.git
+cd emailfinder
+./run.sh
+```
+
+Sets up the virtual environment on first run, starts the web UI, and opens
+it in your browser automatically once it's up. Ctrl+C stops the server.
+
+## Manual install
 
 ```bash
 cd email-finder
