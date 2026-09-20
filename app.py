@@ -9,18 +9,15 @@ mail server you target -- see README.md for the same caveats (port 25 may
 be blocked on your network, catch-all domains, accept-then-bounce
 providers, and please be respectful of the domains you probe).
 
-Auth: every request requires HTTP Basic Auth. Set EMAIL_FINDER_USER /
-EMAIL_FINDER_PASSWORD to choose your own credentials; if unset, a random
-password is generated each run and printed to the console at startup.
-This exists because the app fires live SMTP probes on request -- anyone
-who can reach the port should not be able to trigger that for free.
+No authentication: anything that can reach this server can trigger a
+search (and the live SMTP probes that come with it). Fine for
+127.0.0.1-only use; if you bind it beyond localhost, only do so on a
+network you trust.
 """
 from __future__ import annotations
 
 import json
 import os
-import secrets
-from functools import wraps
 
 from flask import Flask, Response, jsonify, render_template, request, stream_with_context
 
@@ -28,37 +25,13 @@ from finder.patterns import DEFAULT_ALT_TLDS, generate_full_candidates, guess_do
 
 app = Flask(__name__)
 
-AUTH_USER = os.environ.get("EMAIL_FINDER_USER", "admin")
-AUTH_PASSWORD = os.environ.get("EMAIL_FINDER_PASSWORD") or secrets.token_urlsafe(12)
-_PASSWORD_WAS_GENERATED = "EMAIL_FINDER_PASSWORD" not in os.environ
-
-
-def require_auth(view):
-    @wraps(view)
-    def wrapped(*args, **kwargs):
-        auth = request.authorization
-        if not auth or not (
-            secrets.compare_digest(auth.username or "", AUTH_USER)
-            and secrets.compare_digest(auth.password or "", AUTH_PASSWORD)
-        ):
-            return Response(
-                "Authentication required.",
-                401,
-                {"WWW-Authenticate": 'Basic realm="email-finder"'},
-            )
-        return view(*args, **kwargs)
-
-    return wrapped
-
 
 @app.get("/")
-@require_auth
 def index():
     return render_template("index.html")
 
 
 @app.get("/api/guess-domain")
-@require_auth
 def api_guess_domain():
     company = request.args.get("company", "").strip()
     tld = request.args.get("tld", "com").strip() or "com"
@@ -72,7 +45,6 @@ def _sse(event: str, data: dict) -> str:
 
 
 @app.get("/api/search")
-@require_auth
 def api_search():
     first = request.args.get("first", "").strip()
     last = request.args.get("last", "").strip()
@@ -139,11 +111,6 @@ if __name__ == "__main__":
     port = int(os.environ.get("EMAIL_FINDER_PORT", "5000"))
 
     print(f"email-finder web UI: http://{host}:{port}")
-    print(f"  username: {AUTH_USER}")
-    if _PASSWORD_WAS_GENERATED:
-        print(f"  password: {AUTH_PASSWORD}  (randomly generated this run -- set EMAIL_FINDER_PASSWORD to fix it)")
-    else:
-        print("  password: (set via EMAIL_FINDER_PASSWORD)")
     if host != "127.0.0.1":
         print("  NOTE: bound to a non-localhost address -- reachable by anything that can route to it on this network.")
 
