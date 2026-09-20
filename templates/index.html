@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Email Finder</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Email&nbsp;Finder</h1>
+      <p class="sub">Guess likely email addresses from a name + company, and check them live over SMTP — no mail is ever sent.</p>
+    </header>
+
+    <form id="search-form" class="card">
+      <div class="grid">
+        <label>
+          <span>First name</span>
+          <input type="text" id="first" name="first" placeholder="Jane" required autocomplete="off">
+        </label>
+        <label>
+          <span>Last name</span>
+          <input type="text" id="last" name="last" placeholder="Doe" required autocomplete="off">
+        </label>
+      </div>
+
+      <div class="grid">
+        <label>
+          <span>Company name <em>(optional, guesses a domain)</em></span>
+          <input type="text" id="company" name="company" placeholder="Acme Inc" autocomplete="off">
+        </label>
+        <label>
+          <span>Domain <em>(preferred — overrides guess)</em></span>
+          <input type="text" id="domain" name="domain" placeholder="acme.com" required autocomplete="off">
+        </label>
+      </div>
+
+      <details class="options">
+        <summary>Advanced options</summary>
+        <div class="grid three">
+          <label class="checkbox">
+            <input type="checkbox" id="verify" checked>
+            <span>Verify via SMTP</span>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="stop_on_valid">
+            <span>Stop at first valid hit</span>
+          </label>
+          <label>
+            <span>Delay between checks (s)</span>
+            <input type="number" id="delay" value="1.5" min="0" max="10" step="0.5">
+          </label>
+          <label>
+            <span>Timeout (s)</span>
+            <input type="number" id="timeout" value="10" min="1" max="30" step="1">
+          </label>
+          <label>
+            <span>HELO domain <em>(optional)</em></span>
+            <input type="text" id="helo_domain" placeholder="defaults to target domain" autocomplete="off">
+          </label>
+        </div>
+        <div class="grid three">
+          <label class="checkbox">
+            <input type="checkbox" id="include_roles" checked>
+            <span>Include generic addresses <em>(contact@, sales@, info@…)</em></span>
+          </label>
+          <label class="checkbox">
+            <input type="checkbox" id="include_alt_tlds" checked>
+            <span>Include alternate TLDs <em>(long shots)</em></span>
+          </label>
+          <label>
+            <span>Alternate TLDs</span>
+            <input type="text" id="alt_tlds" value="fr,co,us" autocomplete="off">
+          </label>
+          <label>
+            <span>Max parallel domains <em>(never &gt;1 connection per server)</em></span>
+            <input type="number" id="max_concurrent_domains" value="4" min="1" max="8" step="1">
+          </label>
+        </div>
+      </details>
+
+      <div class="actions">
+        <button type="submit" id="submit-btn">Find emails</button>
+        <span id="status-line" class="status-line" aria-live="polite"></span>
+      </div>
+    </form>
+
+    <section id="results-card" class="card hidden">
+      <div class="results-header">
+        <h2>Results</h2>
+        <div class="summary" id="summary"></div>
+        <div class="export">
+          <button type="button" id="export-csv" disabled>Export CSV</button>
+          <button type="button" id="export-json" disabled>Export JSON</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="results-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Email</th>
+              <th>Pattern</th>
+              <th>Detail</th>
+            </tr>
+          </thead>
+          <tbody id="results-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <details class="disclaimer">
+      <summary>How this works &amp; limitations</summary>
+      <ul>
+        <li><strong>No email is sent.</strong> Verification does an SMTP handshake (<code>EHLO</code> → <code>MAIL FROM</code> → <code>RCPT TO</code>) and stops before <code>DATA</code>.</li>
+        <li><strong>Port 25 may be blocked</strong> on your network (common for residential ISPs and many cloud hosts). If every result comes back <code>error</code>, that's almost certainly why.</li>
+        <li><strong>Catch-all domains</strong> accept mail for any address — those results are marked and are not trustworthy.</li>
+        <li><strong>Accept-then-bounce providers</strong> (Gmail, Microsoft 365, many corporate servers) often return success for almost anything at this stage — treat "valid" there with skepticism.</li>
+        <li>Be respectful: keep the delay reasonable, don't hammer a domain, and only use this for legitimate outreach you're allowed to send. Sending unsolicited email is still subject to CAN-SPAM / GDPR / PECR.</li>
+      </ul>
+    </details>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
