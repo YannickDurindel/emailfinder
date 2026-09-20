@@ -7,6 +7,10 @@
   const summaryEl = document.getElementById("summary");
   const exportCsvBtn = document.getElementById("export-csv");
   const exportJsonBtn = document.getElementById("export-json");
+  const validEmailsBox = document.getElementById("valid-emails");
+  const validEmailsTitle = document.getElementById("valid-emails-title");
+  const validEmailsList = document.getElementById("valid-emails-list");
+  const copyValidBtn = document.getElementById("copy-valid");
 
   const companyInput = document.getElementById("company");
   const domainInput = document.getElementById("domain");
@@ -165,6 +169,8 @@
     exportCsvBtn.disabled = true;
     exportJsonBtn.disabled = true;
     statusLine.textContent = "";
+    validEmailsBox.classList.add("hidden");
+    validEmailsList.innerHTML = "";
     setBusy(true);
 
     const source = new EventSource(`/api/search?${params.toString()}`);
@@ -195,11 +201,17 @@
       updateRow(data.email, { status: data.status, detail, smtp_code: data.smtp_code });
     });
 
-    source.addEventListener("done", () => {
+    source.addEventListener("done", (ev) => {
       statusLine.textContent = "Done.";
       setBusy(false);
       exportCsvBtn.disabled = rowOrder.length === 0;
       exportJsonBtn.disabled = rowOrder.length === 0;
+
+      const data = ev.data ? JSON.parse(ev.data) : {};
+      if (data.verified) {
+        showValidEmails();
+      }
+
       source.close();
       currentSource = null;
     });
@@ -210,6 +222,40 @@
       source.close();
       currentSource = null;
     });
+  });
+
+  function showValidEmails() {
+    const valid = rowOrder.filter((email) => rows[email].status === "valid");
+
+    validEmailsBox.classList.remove("hidden");
+
+    if (valid.length === 0) {
+      validEmailsBox.classList.add("empty");
+      validEmailsTitle.textContent = "No valid emails confirmed";
+      validEmailsList.innerHTML = `<p class="valid-emails-empty-msg">None of the candidates could be confirmed as deliverable. Check the full results below for catch-all/unknown/error entries — they may still be worth trying manually.</p>`;
+      copyValidBtn.classList.add("hidden");
+      return;
+    }
+
+    validEmailsBox.classList.remove("empty");
+    validEmailsTitle.textContent = `${valid.length} valid email${valid.length > 1 ? "s" : ""} found`;
+    copyValidBtn.classList.remove("hidden");
+    validEmailsList.innerHTML = valid
+      .map((email) => `<li>${escapeHtml(email)} <span class="via">(${escapeHtml(rows[email].pattern || "")})</span></li>`)
+      .join("");
+  }
+
+  copyValidBtn.addEventListener("click", async () => {
+    const valid = rowOrder.filter((email) => rows[email].status === "valid");
+    const text = valid.join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      const original = copyValidBtn.textContent;
+      copyValidBtn.textContent = "Copied!";
+      setTimeout(() => { copyValidBtn.textContent = original; }, 1500);
+    } catch (e) {
+      downloadBlob(text, "valid-emails.txt", "text/plain");
+    }
   });
 
   function downloadBlob(content, filename, type) {

@@ -166,6 +166,62 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .hidden { display: none; }
 
+.valid-emails {
+  margin-top: 18px;
+  border: 1px solid var(--valid);
+  background: var(--valid-bg);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+.valid-emails.empty {
+  border-color: var(--border);
+  background: var(--bg);
+}
+.valid-emails-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.valid-emails-header strong {
+  font-size: 0.88rem;
+  color: var(--valid);
+}
+.valid-emails.empty .valid-emails-header strong { color: var(--muted); }
+.copy-btn {
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 12px;
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.copy-btn:hover:not(:disabled) { background: var(--card); }
+.valid-emails-list, #valid-emails-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#valid-emails-list li {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+  color: var(--text);
+}
+#valid-emails-list li .via {
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 0.78rem;
+}
+.valid-emails-empty-msg {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
 .results-header {
   display: flex;
   align-items: center;

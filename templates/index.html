@@ -84,6 +84,14 @@
         <button type="submit" id="submit-btn">Find emails</button>
         <span id="status-line" class="status-line" aria-live="polite"></span>
       </div>
+
+      <div id="valid-emails" class="valid-emails hidden">
+        <div class="valid-emails-header">
+          <strong id="valid-emails-title">Valid emails found</strong>
+          <button type="button" id="copy-valid" class="copy-btn">Copy all</button>
+        </div>
+        <ul id="valid-emails-list"></ul>
+      </div>
     </form>
 
     <section id="results-card" class="card hidden">
